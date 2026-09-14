@@ -1,0 +1,100 @@
+{
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "plugins": [
+    "boundaries"
+  ],
+  "settings": {
+    "boundaries/elements": [
+      {
+        "type": "model",
+        "pattern": "src/modules/*/models/**",
+        "capture": ["module"]
+      },
+      {
+        "type": "service",
+        "pattern": "src/modules/*/services/**",
+        "capture": ["module"]
+      },
+      {
+        "type": "controller",
+        "pattern": "src/modules/*/controllers/**",
+        "capture": ["module"]
+      },
+      {
+        "type": "route",
+        "pattern": "src/modules/*/routes/**",
+        "capture": ["module"]
+      },
+      {
+        "type": "config",
+        "pattern": "src/config/**"
+      },
+      {
+        "type": "constant",
+        "pattern": "src/constants/**"
+      },
+      {
+        "type": "middleware",
+        "pattern": "src/middlewares/**"
+      },
+      {
+        "type": "util",
+        "pattern": "src/utils/**"
+      },
+      {
+        "type": "central-route",
+        "pattern": "src/routes/**"
+      }
+    ],
+    "boundaries/ignore": [
+      "**/scripts/**",
+      "**/node_modules/**"
+    ]
+  },
+  "rules": {
+    "boundaries/dependencies": [
+      "error",
+      {
+        "default": "allow",
+        "policies": [
+          {
+            "from": { "element": { "type": "controller" } },
+            "disallow": [
+              { "to": { "element": { "type": "model", "captured": { "module": "!{{from.module}}" } } } },
+              { "to": { "element": { "type": "controller", "captured": { "module": "!{{from.module}}" } } } },
+              { "to": { "element": { "type": "service", "captured": { "module": "!{{from.module}}" } } } },
+              { "to": { "element": { "type": "route", "captured": { "module": "!{{from.module}}" } } } }
+            ],
+            "message": "Controllers cannot import files from other modules. Use internal services instead."
+          },
+          {
+            "from": { "element": { "type": "service" } },
+            "disallow": [
+              { "to": { "element": { "type": "model", "captured": { "module": "!{{from.module}}" } } } },
+              { "to": { "element": { "type": "controller" } } },
+              { "to": { "element": { "type": "route" } } }
+            ],
+            "message": "Services cannot import models from other modules. Cross-module imports are only permitted between Services."
+          },
+          {
+            "from": { "element": { "type": "model" } },
+            "disallow": [
+              { "to": { "element": { "type": "model", "captured": { "module": "!{{from.module}}" } } } },
+              { "to": { "element": { "type": "service" } } },
+              { "to": { "element": { "type": "controller" } } },
+              { "to": { "element": { "type": "route" } } }
+            ],
+            "message": "Models must remain isolated dumb schemas and cannot import from other modules or application layers."
+          }
+        ]
+      }
+    ]
+  }
+}
