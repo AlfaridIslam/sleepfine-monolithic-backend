@@ -78,6 +78,11 @@ const config = {
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   },
 
+  // Google Sheets Configuration
+  googleSheets: {
+    warrantyWebhookUrl: process.env.GOOGLE_SHEETS_WARRANTY_URL || 'https://script.google.com/macros/s/AKfycbzgGYjZQD0m-En0jnBU7L3G9izay9UHq0G3--8HdEcgCl_Vo-yIcK7evT-OL7QhczU59Q/exec',
+  },
+
   // Rate Limiting
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 900000, // 15 minutes

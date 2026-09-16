@@ -1,4 +1,5 @@
 import salesService from '../services/salesService.js';
+import { dbService, pdfService, sheetService } from '../services/warranty/index.js';
 import { asyncHandler } from '../../../utils/asyncHandler.js';
 import ApiResponse from '../../../utils/response.js';
 import logger from '../../../utils/logger.js';
@@ -448,6 +449,111 @@ export const generateStandaloneStoreInvoice = asyncHandler(async (req, res) => {
   return res.send(pdfData.buffer);
 });
 
+// Public Self-Service Warranty Registration Controller
+// Methodically orchestrates:
+// 1. Primary blocking execution: MongoDB persistence as single source of truth
+// 2. Concurrent side-effects: PDF rendering + Google Sheet sync via Promise.allSettled
+// 3. Fault-tolerant handling: 201 Success returned even if side-effects encounter errors
+export const handlePublicWarrantySubmission = asyncHandler(async (req, res) => {
+  const warrantyData = req.body || {};
+
+  // 1. PRIMARY EXECUTION (BLOCKING): MongoDB is our source of truth
+  let savedRecord;
+  try {
+    savedRecord = await dbService.saveWarranty(warrantyData);
+  } catch (dbError) {
+    logger.error('Primary DB execution failed for warranty registration:', dbError);
+    return ApiResponse.error(res, 500, 'Database error: Failed to record warranty registration', {
+      error: dbError.message,
+    });
+  }
+
+  const plainRecord = savedRecord.toObject ? savedRecord.toObject() : savedRecord;
+
+  // 2. CONCURRENT SIDE-EFFECTS (NON-BLOCKING): PDF generation & Google Sheets sync
+  const [pdfResult, sheetResult] = await Promise.allSettled([
+    pdfService.generateWarrantyPDF(plainRecord.warrantyNumber, plainRecord),
+    sheetService.syncToGoogleSheet(plainRecord),
+  ]);
+
+  // 3. FAULT TOLERANCE & AUDIT LOGGING
+  const syncUpdates = {};
+
+  if (pdfResult.status === 'fulfilled') {
+    logger.info(`Warranty PDF generated successfully for ${plainRecord.warrantyNumber}`);
+    syncUpdates['syncStatus.pdf'] = {
+      status: 'success',
+      generatedAt: new Date(),
+    };
+  } else {
+    logger.error('Warranty PDF Generation side-effect failed:', {
+      warrantyNumber: plainRecord.warrantyNumber,
+      error: pdfResult.reason?.message,
+    });
+    syncUpdates['syncStatus.pdf'] = {
+      status: 'failed',
+      error: pdfResult.reason?.message || 'PDF generation error',
+    };
+  }
+
+  if (sheetResult.status === 'fulfilled') {
+    logger.info(`Google Sheet synced successfully for ${plainRecord.warrantyNumber}`);
+    syncUpdates['syncStatus.googleSheet'] = {
+      status: 'success',
+      syncedAt: new Date(),
+    };
+  } else {
+    logger.error('Google Sheet synchronization side-effect failed:', {
+      warrantyNumber: plainRecord.warrantyNumber,
+      error: sheetResult.reason?.message,
+    });
+    syncUpdates['syncStatus.googleSheet'] = {
+      status: 'failed',
+      error: sheetResult.reason?.message || 'Google Sheet sync error',
+    };
+  }
+
+  // Non-blocking sync status update in DB
+  dbService.updateSyncStatus(savedRecord._id, syncUpdates);
+
+  // 4. CLIENT RESPONSE: Return 201 Success
+  // If client specifically requested raw binary PDF stream via Accept header or ?format=pdf
+  const wantsPdfBinary = (req.headers.accept === 'application/pdf' || req.query.format === 'pdf');
+  if (wantsPdfBinary && pdfResult.status === 'fulfilled') {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${pdfResult.value.fileName}"`);
+    res.setHeader('Content-Length', pdfResult.value.fileSize);
+    res.setHeader('X-Warranty-Id', savedRecord._id.toString());
+    res.setHeader('X-Warranty-Number', plainRecord.warrantyNumber);
+    return res.status(201).send(pdfResult.value.buffer);
+  }
+
+  // Default: Structured 201 Created JSON response with base64 PDF payload & sync diagnostics
+  const responseData = {
+    warrantyId: savedRecord._id,
+    warrantyNumber: plainRecord.warrantyNumber,
+    customerName: plainRecord.customerName,
+    mobileNumber: plainRecord.mobileNumber,
+    product: plainRecord.product,
+    invoiceDate: plainRecord.invoiceDate,
+    pdf: pdfResult.status === 'fulfilled' ? {
+      status: 'success',
+      fileName: pdfResult.value.fileName,
+      fileSize: pdfResult.value.fileSize,
+      pdfBase64: pdfResult.value.buffer.toString('base64'),
+    } : {
+      status: 'failed',
+      error: pdfResult.reason?.message || 'PDF generation error',
+    },
+    googleSheet: {
+      status: sheetResult.status === 'fulfilled' ? 'success' : 'failed',
+      error: sheetResult.status === 'rejected' ? sheetResult.reason?.message : null,
+    },
+  };
+
+  return ApiResponse.created(res, 'Warranty registration processed successfully', responseData);
+});
+
 // Generate Warranty Card PDF
 export const generateWarrantyPDF = asyncHandler(async (req, res) => {
   const warrantyData = req.body || {};
@@ -490,6 +596,7 @@ export default {
   generateStoreInvoicePDF,
   generateStandaloneStoreInvoice,
   generateWarrantyPDF,
+  handlePublicWarrantySubmission,
   getOrderPDF,
   getProducts,
   sendToWhatsApp,

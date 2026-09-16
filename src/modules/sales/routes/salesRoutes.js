@@ -272,9 +272,9 @@ router.post('/warranty',
   salesController.generateWarrantyPDF
 );
 
-// Generate public warranty PDF (public self-service registration)
+// Generate public warranty PDF & persist registration (public self-service registration)
 router.post('/public/warranty',
-  salesController.generateWarrantyPDF
+  salesController.handlePublicWarrantySubmission
 );
 
 // ==================== PRODUCT ROUTES ====================
