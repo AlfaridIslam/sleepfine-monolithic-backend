@@ -36,23 +36,32 @@ const createRedisClient = () => {
     socket: {
       host: config.redis.host,
       port: config.redis.port,
+      connectTimeout: 3000,
+      reconnectStrategy: (retries) => {
+        // Stop retrying after 2 attempts to fail fast and fallback to mock service
+        if (retries >= 2) {
+          return new Error('Redis connection failed: max retries reached');
+        }
+        return 500;
+      },
     },
     database: config.redis.db,
-    retryDelayOnFailover: config.redis.retryDelayOnFailover,
-    maxRetriesPerRequest: config.redis.maxRetriesPerRequest,
   };
 
   if (config.redis.password && config.redis.password.trim() !== '') {
     redisOptions.password = config.redis.password;
     logger.info('Redis password configured');
   } else {
-    logger.info('Redis connecting without password (development mode)');
+    logger.info('Redis connecting without password');
   }
 
   const client = Redis.createClient(redisOptions);
 
   client.on('error', (err) => {
-    logger.error('Redis Client Error:', err);
+    // Only log if not already switched to mock fallback
+    if (!cacheService?.usingMock) {
+      logger.error('Redis Client Error:', err.message || err);
+    }
   });
 
   client.on('connect', () => {
@@ -73,14 +82,24 @@ const createRedisClient = () => {
 // Cache wrapper for Redis with fallback to mock
 class CacheService {
   constructor() {
+    this.isConnected = false;
+    this.usingMock = false;
+    this.client = null;
+
+    if (!config.redis.enabled) {
+      logger.info('Redis is disabled by configuration (REDIS_ENABLED=false). Using in-memory RedisMockService.');
+      this.client = new RedisMockService();
+      this.isConnected = true;
+      this.usingMock = true;
+      return;
+    }
+
     try {
-      logger.info('Attempting to connect to real Redis...');
+      logger.info('Attempting to connect to Redis...');
       this.client = createRedisClient();
-      this.isConnected = false;
-      this.usingMock = false;
       this.connect();
     } catch (error) {
-      logger.warn('Redis connection setup failed, using mock service:', error.message);
+      logger.warn(`Redis connection setup failed (${error.message}). Using in-memory mock service.`);
       this.client = new RedisMockService();
       this.isConnected = true;
       this.usingMock = true;
@@ -88,13 +107,19 @@ class CacheService {
   }
 
   async connect() {
-    if (this.usingMock) return;
+    if (this.usingMock || !this.client) return;
     
     try {
       await this.client.connect();
       this.isConnected = true;
+      logger.info('Connected to Redis server successfully');
     } catch (error) {
-      logger.warn('Redis connection failed, switching to mock service:', error.message);
+      logger.warn(`Redis connection failed (${error.message}). Gracefully switching to in-memory mock service.`);
+      try {
+        if (typeof this.client.disconnect === 'function') {
+          await this.client.disconnect().catch(() => {});
+        }
+      } catch (_) {}
       this.client = new RedisMockService();
       this.isConnected = true;
       this.usingMock = true;
@@ -158,6 +183,12 @@ class CacheService {
 
     try {
       if (this.usingMock) {
+        const matchingKeys = await this.client.keys(pattern);
+        if (matchingKeys && matchingKeys.length > 0) {
+          for (const key of matchingKeys) {
+            await this.client.del(key);
+          }
+        }
         return true;
       }
       const keys = await this.client.keys(pattern);

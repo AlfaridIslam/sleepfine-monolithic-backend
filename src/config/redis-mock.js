@@ -7,7 +7,23 @@ class RedisMockService {
   constructor() {
     this.cache = new Map();
     this.isConnected = true;
-    logger.info('Redis Mock Service initialized (development mode)');
+
+    // Periodic cleanup of expired entries every 5 minutes
+    this.cleanupInterval = setInterval(() => this.cleanExpired(), 5 * 60 * 1000);
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref(); // Prevent timer from keeping Node process alive
+    }
+
+    logger.info('Redis Mock Service initialized (in-memory caching active)');
+  }
+
+  cleanExpired() {
+    const now = Date.now();
+    for (const [key, item] of this.cache.entries()) {
+      if (item && item.expiry && now > item.expiry) {
+        this.cache.delete(key);
+      }
+    }
   }
 
   async connect() {
@@ -16,6 +32,9 @@ class RedisMockService {
   }
 
   async disconnect() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
     this.isConnected = false;
     logger.info('Redis Mock Service disconnected');
   }
