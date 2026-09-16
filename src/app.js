@@ -39,13 +39,63 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// CORS
-app.use(cors({
-  origin: config.cors.origin,
+// Dynamic CORS configuration allowing all SleepFine domains, subdomains, and local dev
+const allowedOriginRegexes = [
+  /^https?:\/\/(?:[a-zA-Z0-9-]+\.)*sleepfinemattresses\.com(?::\d+)?$/,
+  /^https?:\/\/(?:[a-zA-Z0-9-]+\.)*sleepfineindia\.com(?::\d+)?$/,
+  /^https?:\/\/localhost(?::\d+)?$/,
+  /^https?:\/\/127\.0\.0\.1(?::\d+)?$/,
+];
+
+const defaultAllowedOrigins = [
+  'https://sleepfinemattresses.com',
+  'https://www.sleepfinemattresses.com',
+  'https://admin.sleepfinemattresses.com',
+  'https://api.sleepfinemattresses.com',
+  'https://sleepfineindia.com',
+  'https://www.sleepfineindia.com',
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser clients (curl, Postman, mobile native apps, server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const configuredOrigins = Array.isArray(config.cors.origin)
+      ? config.cors.origin
+      : (typeof config.cors.origin === 'string' ? config.cors.origin.split(',').map((s) => s.trim()) : []);
+
+    const allAllowed = [...defaultAllowedOrigins, ...configuredOrigins];
+
+    if (allAllowed.includes(origin)) {
+      return callback(null, true);
+    }
+
+    if (allowedOriginRegexes.some((regex) => regex.test(origin))) {
+      return callback(null, true);
+    }
+
+    logger.warn(`CORS rejected for unauthorized origin: ${origin}`);
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
   credentials: config.cors.credentials,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID'],
-}));
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-API-Key',
+    'X-Request-ID',
+    'Accept',
+    'X-Requested-With',
+    'Origin',
+  ],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Rate limiting on API routes
 const limiter = rateLimit({

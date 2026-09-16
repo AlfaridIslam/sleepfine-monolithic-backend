@@ -98,7 +98,18 @@ const config = {
 
   // CORS Configuration
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:4200'],
+    origin: process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) || [
+      'https://sleepfinemattresses.com',
+      'https://www.sleepfinemattresses.com',
+      'https://admin.sleepfinemattresses.com',
+      'https://api.sleepfinemattresses.com',
+      'https://sleepfineindia.com',
+      'https://www.sleepfineindia.com',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:4200',
+    ],
     credentials: process.env.CORS_CREDENTIALS !== 'false',
   },
 
