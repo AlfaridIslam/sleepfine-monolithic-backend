@@ -11,9 +11,6 @@ const startServer = async () => {
     // Setup process-level error handlers
     setupErrorHandlers();
 
-    // Connect to database
-    await connectDB();
-
     // Create HTTP server
     const server = http.createServer(app);
     const port = config.server.port;
@@ -29,6 +26,14 @@ const startServer = async () => {
       logger.info(`🔗 Health Check: http://localhost:${port}/health`);
       logger.info(`🌐 API Base URL: http://localhost:${port}/api/v1`);
       logger.info(`=======================================================`);
+    });
+
+    // Connect to database
+    // await connectDB();
+
+    // Connect to database in the background without blocking listen()
+    connectDB().catch((err) => {
+      logger.error('Background MongoDB connection failed:', err);
     });
 
     // Graceful shutdown handling

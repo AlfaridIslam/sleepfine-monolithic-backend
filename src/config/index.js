@@ -29,7 +29,8 @@ const config = {
 
   // Redis Configuration
   redis: {
-    enabled: process.env.REDIS_ENABLED !== 'false',
+    // enabled: process.env.REDIS_ENABLED !== 'false',
+    enabled: process.env.REDIS_ENABLED === 'true',
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT, 10) || 6379,
     password: process.env.REDIS_PASSWORD || null,
@@ -80,7 +81,7 @@ const config = {
 
   // Google Sheets Configuration
   googleSheets: {
-    warrantyWebhookUrl: process.env.GOOGLE_SHEETS_WARRANTY_URL || 'https://script.google.com/macros/s/AKfycbzgGYjZQD0m-En0jnBU7L3G9izay9UHq0G3--8HdEcgCl_Vo-yIcK7evT-OL7QhczU59Q/exec',
+    warrantyWebhookUrl: process.env.GOOGLE_SHEETS_WARRANTY_URL || '',
   },
 
   // Rate Limiting

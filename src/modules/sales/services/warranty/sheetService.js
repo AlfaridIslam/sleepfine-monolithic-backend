@@ -5,14 +5,11 @@ class WarrantySheetService {
   constructor() {
     this.appsScriptUrl = config.googleSheets?.warrantyWebhookUrl ||
       process.env.GOOGLE_SHEETS_WARRANTY_URL ||
-      'https://script.google.com/macros/s/AKfycbzgGYjZQD0m-En0jnBU7L3G9izay9UHq0G3--8HdEcgCl_Vo-yIcK7evT-OL7QhczU59Q/exec';
-
-    this.sheetBestUrl = process.env.SHEETBEST_WARRANTY_URL ||
-      'https://api.sheetbest.com/sheets/f6c087ef-7190-4e8f-a6f2-0803e4fa8066';
+      '';
   }
 
   /**
-   * Push warranty data to Google Sheet via Google Apps Script Web App and SheetBest
+   * Push warranty data to Google Sheet via Google Apps Script Web App
    * @param {Object} warrantyRecord - Mongoose warranty document / plain object
    * @returns {Promise<{ status: string, message?: string }>}
    */
@@ -78,29 +75,16 @@ class WarrantySheetService {
         warrantyNumber: warrantyRecord.warrantyNumber,
       };
 
-      // Dispatch to single target (Primary: SheetBest / Configured URL) with fallback
-      // Prevents duplicate row insertion when both endpoints point to the same Google Sheet
-      const primaryUrl = this.sheetBestUrl || this.appsScriptUrl;
-      const fallbackUrl = (this.sheetBestUrl && this.appsScriptUrl) ? this.appsScriptUrl : null;
+      // Dispatch directly and exclusively to GOOGLE_SHEETS_WARRANTY_URL (appsScriptUrl)
+      const targetUrl = this.appsScriptUrl || config.googleSheets?.warrantyWebhookUrl || process.env.GOOGLE_SHEETS_WARRANTY_URL;
 
-      try {
-        await this._postToTarget(primaryUrl, payload);
-        logger.info(`Google Sheet synced successfully via primary target for warranty: ${warrantyNumber}`);
-        return { status: 'success', target: 'primary' };
-      } catch (primaryError) {
-        logger.warn(`Primary Google Sheet target failed (${primaryError.message}). Trying fallback...`);
-        if (fallbackUrl && fallbackUrl !== primaryUrl) {
-          try {
-            await this._postToTarget(fallbackUrl, payload);
-            logger.info(`Google Sheet synced successfully via fallback target for warranty: ${warrantyNumber}`);
-            return { status: 'success', target: 'fallback' };
-          } catch (fallbackError) {
-            logger.error(`Fallback Google Sheet target also failed: ${fallbackError.message}`);
-            throw new Error(`Google Sheet sync failed: Primary (${primaryError.message}), Fallback (${fallbackError.message})`);
-          }
-        }
-        throw primaryError;
+      if (!targetUrl) {
+        throw new Error('Google Sheets warranty webhook URL is not configured');
       }
+
+      await this._postToTarget(targetUrl, payload);
+      logger.info(`Google Sheet synced successfully via Apps Script webhook for warranty: ${warrantyNumber}`);
+      return { status: 'success', target: 'primary' };
     } catch (error) {
       logger.error(`Google Sheet sync failed for warranty ${warrantyNumber}:`, error.message);
       throw error;
